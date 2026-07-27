@@ -7,7 +7,7 @@ import {
   LogOut, Lock, UserCircle, Eye, EyeOff, Building2
 } from 'lucide-react';
 
-const API_BASE = 'http://127.0.0.1:8000';
+const API_BASE = 'https://harvester-smart-khata.onrender.com';
 
 /* ------------------------------------------------------------------ */
 /*  Crops List for Dropdown                                            */
