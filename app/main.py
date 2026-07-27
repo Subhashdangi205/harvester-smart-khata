@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import payments
 from .database import engine, Base
 from .config import settings
-from .routers import farmers, katai, expenses
+from .routers import farmers, katai, expenses, auth
 
 # 🔥 IMPORTANT: App chalu hote hi SQLite database ki saari tables automatic banane ke liye
 Base.metadata.create_all(bind=engine)
@@ -19,13 +19,14 @@ app = FastAPI(
 # 🌐 Frontend (React / Vite) se Connect karne ke liye CORS Policy
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Front-end se saari requests allow kar raha hai
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Saare module ke routers ko main app mein register (include) karna
+app.include_router(auth.router)
 app.include_router(farmers.router)
 app.include_router(katai.router)
 app.include_router(expenses.router)

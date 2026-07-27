@@ -2,18 +2,35 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date
 from sqlalchemy.orm import relationship
 from .database import Base
 
+class User(Base):
+    """0. Login Karne Wale Users (Harvester Owners + Super Admin)"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    role = Column(String, default="owner")  # "owner" ya "superadmin"
+
+    farmers = relationship("Farmer", back_populates="owner", cascade="all, delete-orphan")
+    expenses = relationship("ExpenseLog", back_populates="owner", cascade="all, delete-orphan")
+
+
 class Farmer(Base):
     """1. Kisaan Ki Profile Table"""
     __tablename__ = "farmers"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
     name = Column(String, index=True, nullable=False)
     father_name = Column(String, index=True, nullable=False)
-    phone_number = Column(String, unique=True, index=True, nullable=False)
+    phone_number = Column(String, index=True, nullable=False)
     village = Column(String, index=True, nullable=False)
-    
+
     total_outstanding_dues = Column(Float, default=0.0)
 
+    owner = relationship("User", back_populates="farmers")
     katai_entries = relationship("KataiLog", back_populates="farmer", cascade="all, delete-orphan")
     payment_entries = relationship("PaymentLog", back_populates="farmer", cascade="all, delete-orphan")
 
@@ -24,20 +41,20 @@ class KataiLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     farmer_id = Column(Integer, ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False)
-    
+
     khet_name = Column(String, nullable=False)
     fasal_name = Column(String, nullable=False)
-    
+
     bigha = Column(Float, nullable=False)
     rate_per_bigha = Column(Float, nullable=False)
     amount_received = Column(Float, default=0.0)
-    
+
     total_amount = Column(Float, nullable=False)
     amount_remaining = Column(Float, nullable=False)
-    
+
     season_year = Column(Integer, default=2026, index=True)
     created_at = Column(Date, nullable=False)
-    due_date = Column(Date, nullable=True)  # 🆕 NAYA COLUMN
+    due_date = Column(Date, nullable=True)
 
     farmer = relationship("Farmer", back_populates="katai_entries")
 
@@ -48,7 +65,7 @@ class PaymentLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     farmer_id = Column(Integer, ForeignKey("farmers.id", ondelete="CASCADE"), nullable=False)
-    
+
     amount = Column(Float, nullable=False)
     payment_mode = Column(String, default="Cash")
     date = Column(Date, nullable=False)
@@ -61,9 +78,13 @@ class ExpenseLog(Base):
     __tablename__ = "expense_logs"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
     expense_type = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     details = Column(String, nullable=True)
-    
+
     season_year = Column(Integer, default=2026, index=True)
     date = Column(Date, nullable=False)
+
+    owner = relationship("User", back_populates="expenses")

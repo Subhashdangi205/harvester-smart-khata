@@ -2,6 +2,33 @@ from pydantic import BaseModel, Field
 from datetime import date as date_type
 from typing import List, Optional
 
+# ==================== 0. AUTH SCHEMAS ====================
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    display_name: Optional[str] = None
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    username: str
+    display_name: Optional[str] = None
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    display_name: Optional[str] = None
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
 # ==================== 1. EXPENSE SCHEMAS ====================
 class ExpenseBase(BaseModel):
     expense_type: str = Field(..., description="'diesel', 'maintenance', 'repair', 'labor', ya 'other'")
@@ -17,6 +44,7 @@ class ExpenseCreate(ExpenseBase):
 class ExpenseResponse(ExpenseBase):
     id: int
     date: date_type
+    owner_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -63,7 +91,7 @@ class KataiLogBase(BaseModel):
     end_hour: Optional[float] = 0.0
     total_hours: Optional[float] = 0.0
     season_year: int = 2026
-    due_date: Optional[date_type] = None  # 🆕 NAYA FIELD
+    due_date: Optional[date_type] = None
 
 class KataiLogCreate(KataiLogBase):
     farmer_id: int
@@ -92,6 +120,7 @@ class FarmerCreate(FarmerBase):
 
 class FarmerResponse(FarmerBase):
     id: int
+    owner_id: Optional[int] = None
     total_outstanding_dues: float
     katai_entries: List[KataiLogResponse] = []
     payment_entries: List[PaymentResponse] = []
@@ -107,3 +136,17 @@ class ProfitAnalysisResponse(BaseModel):
     total_cash_collected: float
     total_expenses: float
     net_profit: float
+    owner_username: Optional[str] = None
+
+
+# ==================== 6. SUPERADMIN "ALL HARVESTERS" SCHEMA ====================
+class OwnerSummary(BaseModel):
+    owner_id: int
+    username: str
+    display_name: Optional[str] = None
+    total_farmers: int
+    total_gross_income: float
+    total_cash_collected: float
+    total_expenses: float
+    net_profit: float
+    total_outstanding_dues: float

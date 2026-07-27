@@ -3,7 +3,8 @@ import {
   Sprout, LayoutDashboard, UserPlus, ClipboardList, Search, IndianRupee,
   TrendingUp, TrendingDown, Wallet, Receipt, Phone, MapPin, User, Users,
   Plus, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
-  Wheat, Fuel, Wrench, X, CalendarDays, Landmark, History, MessageSquare, Download, FileSpreadsheet, Languages
+  Wheat, Fuel, Wrench, X, CalendarDays, Landmark, History, MessageSquare, Download, FileSpreadsheet, Languages,
+  LogOut, Lock, UserCircle, Eye, EyeOff, Building2
 } from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -57,19 +58,51 @@ const fmtINR = (n) => {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 /* ------------------------------------------------------------------ */
-/*  API helpers                                                       */
+/*  AUTH TOKEN STORAGE                                                 */
 /* ------------------------------------------------------------------ */
-async function apiGet(path) {
-  const res = await fetch(`${API_BASE}${path}`);
+const TOKEN_KEY = 'harvester_token';
+const USER_KEY = 'harvester_user';
+
+function saveSession(token, user) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+function loadSession() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const userRaw = localStorage.getItem(USER_KEY);
+  if (!token || !userRaw) return null;
+  try {
+    return { token, user: JSON.parse(userRaw) };
+  } catch (_) {
+    return null;
+  }
+}
+function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+/* ------------------------------------------------------------------ */
+/*  API helpers (ab token ke saath)                                    */
+/* ------------------------------------------------------------------ */
+async function apiGet(path, token) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 401) throw new Error('__UNAUTHORIZED__');
   if (!res.ok) throw new Error(`Server said no (${res.status})`);
   return res.json();
 }
-async function apiPost(path, body) {
+async function apiPost(path, body, token) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   });
+  if (res.status === 401) throw new Error('__UNAUTHORIZED__');
   if (!res.ok) {
     let msg = `Server said no (${res.status})`;
     try {
@@ -274,14 +307,173 @@ function PrimaryButton({ children, icon, className = '', ...rest }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  LOGIN / SIGNUP SCREEN                                              */
+/* ------------------------------------------------------------------ */
+function AuthScreen({ onLoggedIn, notify }) {
+  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      notify('Username aur password dono bharo bhai.', 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (mode === 'signup') {
+        await apiPost('/auth/signup', {
+          username: username.trim(),
+          password,
+          display_name: displayName.trim() || username.trim(),
+        });
+        notify('Account ban gaya! Ab login karo.', 'success');
+        setMode('login');
+        setPassword('');
+        return;
+      }
+
+      // login
+      const res = await apiPost('/auth/login', { username: username.trim(), password });
+      const user = {
+        username: res.username,
+        display_name: res.display_name,
+        role: res.role,
+      };
+      saveSession(res.access_token, user);
+      notify(`स्वागत है, ${user.display_name || user.username}!`, 'success');
+      onLoggedIn(res.access_token, user);
+    } catch (e) {
+      notify(e.message || 'Kuch gadbad ho gayi.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ ...fontBody, background: C.bg }}>
+      <GoogleFonts />
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-6">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md mb-3"
+            style={{ background: `linear-gradient(135deg, ${C.emerald}, ${C.emeraldDark})` }}
+          >
+            <Sprout size={26} color="#fff" strokeWidth={2.25} />
+          </div>
+          <h1 className="text-xl font-extrabold" style={{ ...fontHead, color: C.ink }}>Harvester Smart Khata</h1>
+          <p className="text-xs" style={{ color: C.inkFaint }}>Agro-tech ledger</p>
+        </div>
+
+        <Card className="p-6">
+          <div className="flex rounded-lg p-1 mb-5" style={{ background: '#F1F5F9' }}>
+            <button
+              type="button"
+              onClick={() => setMode('login')}
+              className="flex-1 py-2 rounded-md text-sm font-semibold transition-all"
+              style={{ background: mode === 'login' ? C.card : 'transparent', color: mode === 'login' ? C.ink : C.inkSoft }}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('signup')}
+              className="flex-1 py-2 rounded-md text-sm font-semibold transition-all"
+              style={{ background: mode === 'signup' ? C.card : 'transparent', color: mode === 'signup' ? C.ink : C.inkSoft }}
+            >
+              Naya Account
+            </button>
+          </div>
+
+          <form onSubmit={submit} className="space-y-4">
+            {mode === 'signup' && (
+              <div>
+                <FieldLabel>Apna Naam</FieldLabel>
+                <div className="relative">
+                  <UserCircle size={16} color={C.inkFaint} className="absolute left-3 top-1/2 -translate-y-1/2" />
+                  <TextInput
+                    className="!pl-9"
+                    placeholder="e.g. Suresh Bhai"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <FieldLabel>Username</FieldLabel>
+              <div className="relative">
+                <User size={16} color={C.inkFaint} className="absolute left-3 top-1/2 -translate-y-1/2" />
+                <TextInput
+                  className="!pl-9"
+                  placeholder="e.g. suresh123"
+                  autoCapitalize="none"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>Password</FieldLabel>
+              <div className="relative">
+                <Lock size={16} color={C.inkFaint} className="absolute left-3 top-1/2 -translate-y-1/2" />
+                <TextInput
+                  type={showPassword ? 'text' : 'password'}
+                  className="!pl-9 !pr-9"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <PrimaryButton
+              type="submit"
+              disabled={submitting}
+              icon={submitting ? <Loader2 size={16} className="animate-spin" /> : null}
+              className="w-full !py-3"
+            >
+              {mode === 'login' ? 'Login Karein' : 'Account Banayein'}
+            </PrimaryButton>
+          </form>
+        </Card>
+
+        <p className="text-center text-xs mt-4" style={{ color: C.inkFaint }}>
+          Har harvester owner ka apna alag, surakshit khata.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Navigation                                                        */
 /* ------------------------------------------------------------------ */
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'farmers', label: 'Add Farmer', icon: UserPlus },
-  { id: 'entry', label: 'New Entry', icon: ClipboardList },
-  { id: 'search', label: 'Khata Search', icon: Search },
-];
+function getNavItems(role) {
+  const base = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'farmers', label: 'Add Farmer', icon: UserPlus },
+    { id: 'entry', label: 'New Entry', icon: ClipboardList },
+    { id: 'search', label: 'Khata Search', icon: Search },
+  ];
+  if (role === 'superadmin') {
+    base.push({ id: 'all_harvesters', label: 'All Harvesters', icon: Building2 });
+  }
+  return base;
+}
 
 function Logo({ compact = false }) {
   return (
@@ -304,7 +496,8 @@ function Logo({ compact = false }) {
   );
 }
 
-function Sidebar({ view, setView }) {
+function Sidebar({ view, setView, user, onLogout }) {
+  const navItems = getNavItems(user?.role);
   return (
     <aside
       className="hidden md:flex flex-col w-64 shrink-0 min-h-screen sticky top-0 border-r"
@@ -314,7 +507,7 @@ function Sidebar({ view, setView }) {
         <Logo />
       </div>
       <nav className="flex-1 px-3 py-5 space-y-1">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = view === item.id;
           return (
@@ -333,24 +526,40 @@ function Sidebar({ view, setView }) {
           );
         })}
       </nav>
-      <div className="px-5 py-4">
-        <Pill tone="slate">v1.0 · Season 2026</Pill>
+      <div className="px-5 py-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: C.indigoSoft }}>
+            <User size={15} color={C.indigo} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold truncate" style={{ color: C.ink }}>{user?.display_name || user?.username}</div>
+            <div className="text-[10px]" style={{ color: C.inkFaint }}>{user?.role === 'superadmin' ? 'Super Admin' : 'Harvester Owner'}</div>
+          </div>
+        </div>
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+          style={{ background: C.roseSoft, color: C.rose }}
+        >
+          <LogOut size={14} /> Logout
+        </button>
       </div>
     </aside>
   );
 }
 
-function BottomNav({ view, setView }) {
+function BottomNav({ view, setView, role }) {
+  const navItems = getNavItems(role);
   return (
     <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-around py-2 border-t"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-around py-2 border-t overflow-x-auto"
       style={{ background: C.card, borderColor: C.border }}
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const Icon = item.icon;
         const active = view === item.id;
         return (
-          <button key={item.id} onClick={() => setView(item.id)} className="flex flex-col items-center gap-1 px-2 py-1">
+          <button key={item.id} onClick={() => setView(item.id)} className="flex flex-col items-center gap-1 px-2 py-1 shrink-0">
             <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: active ? C.emeraldSoft : 'transparent' }}>
               <Icon size={18} color={active ? C.emeraldDark : C.inkFaint} strokeWidth={2.25} />
             </div>
@@ -399,7 +608,7 @@ const EXPENSE_TYPES = [
   { id: 'other', label: 'Other' },
 ];
 
-function Dashboard({ notify }) {
+function Dashboard({ notify, token, onUnauthorized }) {
   const [year, setYear] = useState(2026);
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -414,14 +623,15 @@ function Dashboard({ notify }) {
     setLoading(true);
     setError('');
     try {
-      const data = await apiGet(`/expenses/profit-analysis?year=${y}`);
+      const data = await apiGet(`/expenses/profit-analysis?year=${y}`, token);
       setAnalysis(data);
     } catch (e) {
+      if (e.message === '__UNAUTHORIZED__') return onUnauthorized();
       setError(e.message || 'Could not load the profit analysis.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token, onUnauthorized]);
 
   useEffect(() => { load(year); }, [year, load]);
 
@@ -444,11 +654,12 @@ function Dashboard({ notify }) {
         ...exForm,
         amount: Number(exForm.amount),
         season_year: Number(exForm.season_year),
-      });
+      }, token);
       notify('Expense logged to the khata.', 'success');
       setExForm({ expense_type: 'diesel', amount: '', details: '', date: todayISO(), season_year: year });
       load(year);
     } catch (e) {
+      if (e.message === '__UNAUTHORIZED__') return onUnauthorized();
       notify(e.message || 'Could not log the expense.', 'error');
     } finally {
       setSubmitting(false);
@@ -460,7 +671,7 @@ function Dashboard({ notify }) {
     try {
       let expList = [];
       try {
-        expList = await apiGet(`/expenses/?year=${year}`);
+        expList = await apiGet(`/expenses/?year=${year}`, token);
       } catch (e) {
         expList = [];
       }
@@ -588,7 +799,7 @@ function Dashboard({ notify }) {
 /* ------------------------------------------------------------------ */
 /*  Add Farmer                                                        */
 /* ------------------------------------------------------------------ */
-function AddFarmer({ notify }) {
+function AddFarmer({ notify, token, onUnauthorized }) {
   const empty = { name: '', father_name: '', phone_number: '', village: '' };
   const [form, setForm] = useState(empty);
   const [submitting, setSubmitting] = useState(false);
@@ -602,11 +813,12 @@ function AddFarmer({ notify }) {
     }
     setSubmitting(true);
     try {
-      const res = await apiPost('/farmers/', form);
+      const res = await apiPost('/farmers/', form, token);
       notify(`${form.name} added to the khata.`, 'success');
       setLastAdded(res?.name ? res : { ...form });
       setForm(empty);
     } catch (e) {
+      if (e.message === '__UNAUTHORIZED__') return onUnauthorized();
       notify(e.message || 'Could not add farmer.', 'error');
     } finally {
       setSubmitting(false);
@@ -666,7 +878,7 @@ function AddFarmer({ notify }) {
 /* ------------------------------------------------------------------ */
 /*  New Katai Entry                                                   */
 /* ------------------------------------------------------------------ */
-function FarmerCombobox({ value, onChange }) {
+function FarmerCombobox({ value, onChange, token, onUnauthorized }) {
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState([]);
   const [open, setOpen] = useState(false);
@@ -677,16 +889,17 @@ function FarmerCombobox({ value, onChange }) {
     const handle = setTimeout(async () => {
       setLoading(true);
       try {
-        const data = await apiGet(`/farmers/search?name=${encodeURIComponent(query)}`);
+        const data = await apiGet(`/farmers/search?name=${encodeURIComponent(query)}`, token);
         setOptions(Array.isArray(data) ? data : data?.farmers || []);
-      } catch (_) {
+      } catch (e) {
+        if (e.message === '__UNAUTHORIZED__') { onUnauthorized(); return; }
         setOptions([]);
       } finally {
         setLoading(false);
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [query]);
+  }, [query, token, onUnauthorized]);
 
   useEffect(() => {
     const onClick = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
@@ -729,7 +942,7 @@ function FarmerCombobox({ value, onChange }) {
   );
 }
 
-function NewKataiEntry({ notify }) {
+function NewKataiEntry({ notify, token, onUnauthorized }) {
   const [farmer, setFarmer] = useState(null);
   const [form, setForm] = useState({
     khet_name: '', fasal_name: '', bigha: '', rate_per_bigha: '', amount_received: '',
@@ -758,12 +971,13 @@ function NewKataiEntry({ notify }) {
         season_year: Number(form.season_year),
         due_date: form.due_date || null,
         farmer_id: farmer.id,
-      });
+      }, token);
       notify('Harvesting entry recorded.', 'success');
       setReceipt(res);
       setForm({ khet_name: '', fasal_name: '', bigha: '', rate_per_bigha: '', amount_received: '', season_year: form.season_year, created_at: todayISO(), due_date: '' });
       setFarmer(null);
     } catch (e) {
+      if (e.message === '__UNAUTHORIZED__') return onUnauthorized();
       notify(e.message || 'Could not save the entry.', 'error');
     } finally {
       setSubmitting(false);
@@ -781,7 +995,7 @@ function NewKataiEntry({ notify }) {
         <form onSubmit={submit} className="space-y-4">
           <div>
             <FieldLabel>Farmer</FieldLabel>
-            <FarmerCombobox value={farmer} onChange={setFarmer} />
+            <FarmerCombobox value={farmer} onChange={setFarmer} token={token} onUnauthorized={onUnauthorized} />
             {farmer && (
               <div className="mt-1.5 text-xs flex items-center gap-1 font-medium" style={{ color: C.emerald }}>
                 <CheckCircle2 size={13} /> S/o {farmer.father_name || '—'} · {farmer.village}
@@ -1005,7 +1219,7 @@ function FarmerResultCard({ f, onOpenPayment }) {
   );
 }
 
-function KhataSearch({ notify }) {
+function KhataSearch({ notify, token, onUnauthorized }) {
   const [query, setQuery] = useState('');
   const [allFarmers, setAllFarmers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1021,14 +1235,15 @@ function KhataSearch({ notify }) {
   const fetchAllFarmers = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiGet('/farmers/search?name=');
+      const data = await apiGet('/farmers/search?name=', token);
       setAllFarmers(Array.isArray(data) ? data : data?.farmers || []);
     } catch (e) {
+      if (e.message === '__UNAUTHORIZED__') { onUnauthorized(); return; }
       notify(e.message || 'Could not load farmers list.', 'error');
     } finally {
       setLoading(false);
     }
-  }, [notify]);
+  }, [notify, token, onUnauthorized]);
 
   useEffect(() => {
     fetchAllFarmers();
@@ -1103,7 +1318,7 @@ function KhataSearch({ notify }) {
         amount: amt,
         payment_mode: paymentMode,
         date: todayISO()
-      });
+      }, token);
 
       notify(`₹${amt} payment saved permanently to database!`, 'success');
 
@@ -1119,7 +1334,7 @@ function KhataSearch({ notify }) {
       setSelectedFarmer(null);
       setPaymentAmount('');
     } catch (err) {
-      // Direct Alert agar Database save fail hota hai
+      if (err.message === '__UNAUTHORIZED__') { onUnauthorized(); return; }
       notify(`Payment Save Nahi Ho Paya: ${err.message}`, 'error');
     } finally {
       setSubmittingPayment(false);
@@ -1242,9 +1457,117 @@ function KhataSearch({ notify }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  SUPERADMIN: All Harvesters View                                    */
+/* ------------------------------------------------------------------ */
+function AllHarvestersView({ notify, token, onUnauthorized }) {
+  const [year, setYear] = useState(2026);
+  const [summary, setSummary] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async (y) => {
+    setLoading(true);
+    try {
+      const data = await apiGet(`/expenses/all-harvesters-summary?year=${y}`, token);
+      setSummary(Array.isArray(data) ? data : []);
+    } catch (e) {
+      if (e.message === '__UNAUTHORIZED__') { onUnauthorized(); return; }
+      notify(e.message || 'Could not load harvesters summary.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, onUnauthorized, notify]);
+
+  useEffect(() => { load(year); }, [year, load]);
+
+  const grandTotals = useMemo(() => {
+    return summary.reduce((acc, s) => ({
+      farmers: acc.farmers + (s.total_farmers || 0),
+      gross: acc.gross + (s.total_gross_income || 0),
+      cash: acc.cash + (s.total_cash_collected || 0),
+      expenses: acc.expenses + (s.total_expenses || 0),
+      profit: acc.profit + (s.net_profit || 0),
+      dues: acc.dues + (s.total_outstanding_dues || 0),
+    }), { farmers: 0, gross: 0, cash: 0, expenses: 0, profit: 0, dues: 0 });
+  }, [summary]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold flex items-center gap-2" style={{ ...fontHead, color: C.ink }}>
+            <Building2 size={22} color={C.indigo} /> All Harvesters
+          </h1>
+          <p className="text-sm" style={{ color: C.inkSoft }}>Kiski kitni chali — sabhi harvester owners ka combined view.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <CalendarDays size={16} color={C.inkFaint} />
+          <Select value={year} onChange={(e) => setYear(Number(e.target.value))} className="!w-32">
+            {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon={Users} label="Total Harvesters" value={summary.length} tone="indigo" sub="Registered owners" />
+        <StatCard icon={IndianRupee} label="Combined Gross" value={fmtINR(grandTotals.gross)} tone="indigo" sub="All harvesters milakar" />
+        <StatCard icon={TrendingUp} label="Combined Net Profit" value={fmtINR(grandTotals.profit)} tone="emerald" sub="Sabki total kamai" />
+        <StatCard icon={AlertCircle} label="Combined Dues" value={fmtINR(grandTotals.dues)} tone="rose" sub="Sabke bakaya milakar" />
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm py-12 justify-center" style={{ color: C.inkSoft }}>
+          <Loader2 size={18} className="animate-spin" /> Sabka data la rahe hain…
+        </div>
+      ) : summary.length === 0 ? (
+        <div className="text-sm text-center py-10" style={{ color: C.inkSoft }}>
+          Abhi koi harvester owner registered nahi hai.
+        </div>
+      ) : (
+        <Card className="p-5 md:p-6 overflow-x-auto scrollbar-thin">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead>
+              <tr style={{ color: C.inkFaint }}>
+                <th className="text-left font-semibold uppercase tracking-wide py-2 pr-4 text-xs">Owner</th>
+                <th className="text-right font-semibold uppercase tracking-wide py-2 pr-4 text-xs">Farmers</th>
+                <th className="text-right font-semibold uppercase tracking-wide py-2 pr-4 text-xs">Gross</th>
+                <th className="text-right font-semibold uppercase tracking-wide py-2 pr-4 text-xs">Cash Collected</th>
+                <th className="text-right font-semibold uppercase tracking-wide py-2 pr-4 text-xs">Expenses</th>
+                <th className="text-right font-semibold uppercase tracking-wide py-2 pr-4 text-xs">Net Profit</th>
+                <th className="text-right font-semibold uppercase tracking-wide py-2 text-xs">Dues</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.map((s) => (
+                <tr key={s.owner_id} style={{ borderTop: `1px solid ${C.borderSoft}` }}>
+                  <td className="py-2.5 pr-4">
+                    <div className="font-semibold" style={{ color: C.ink }}>{s.display_name || s.username}</div>
+                    <div className="text-xs" style={{ color: C.inkFaint }}>@{s.username}</div>
+                  </td>
+                  <td className="py-2.5 pr-4 text-right" style={fontMono}>{s.total_farmers}</td>
+                  <td className="py-2.5 pr-4 text-right" style={fontMono}>{fmtINR(s.total_gross_income)}</td>
+                  <td className="py-2.5 pr-4 text-right" style={fontMono}>{fmtINR(s.total_cash_collected)}</td>
+                  <td className="py-2.5 pr-4 text-right" style={fontMono}>{fmtINR(s.total_expenses)}</td>
+                  <td className="py-2.5 pr-4 text-right font-bold" style={{ ...fontMono, color: s.net_profit >= 0 ? C.emerald : C.rose }}>
+                    {fmtINR(s.net_profit)}
+                  </td>
+                  <td className="py-2.5 text-right font-bold" style={{ ...fontMono, color: s.total_outstanding_dues > 0 ? C.rose : C.emerald }}>
+                    {fmtINR(s.total_outstanding_dues)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  App shell                                                         */
 /* ------------------------------------------------------------------ */
 export default function App() {
+  const [session, setSession] = useState(() => loadSession());
   const [view, setView] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const timerRef = useRef(null);
@@ -1255,26 +1578,60 @@ export default function App() {
     timerRef.current = setTimeout(() => setToast(null), 3200);
   }, []);
 
+  const handleLoggedIn = useCallback((token, user) => {
+    setSession({ token, user });
+    setView('dashboard');
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    clearSession();
+    setSession(null);
+  }, []);
+
+  const handleUnauthorized = useCallback(() => {
+    clearSession();
+    setSession(null);
+    notify('Login expired ho gaya, dobara login karein.', 'error');
+  }, [notify]);
+
+  // 🔐 Agar login nahi hai, to seedha auth screen dikhao
+  if (!session) {
+    return <AuthScreen onLoggedIn={handleLoggedIn} notify={notify} />;
+  }
+
+  const { token, user } = session;
+
+  // Agar superadmin view select hai lekin role match nahi karta, dashboard pe wapas bhejo
+  const safeView = (view === 'all_harvesters' && user.role !== 'superadmin') ? 'dashboard' : view;
+
   return (
     <div className="flex min-h-screen" style={{ ...fontBody, background: C.bg }}>
       <GoogleFonts />
-      <Sidebar view={view} setView={setView} />
+      <Sidebar view={safeView} setView={setView} user={user} onLogout={handleLogout} />
 
       <main className="flex-1 pb-24 md:pb-10">
-        <div className="md:hidden flex items-center gap-2 px-5 py-4 border-b" style={{ background: C.card, borderColor: C.border }}>
-          <Logo compact />
-          <span className="font-bold text-[15px]" style={{ ...fontHead, color: C.ink }}>Harvester Smart Khata</span>
+        <div className="md:hidden flex items-center justify-between gap-2 px-5 py-4 border-b" style={{ background: C.card, borderColor: C.border }}>
+          <div className="flex items-center gap-2">
+            <Logo compact />
+            <span className="font-bold text-[15px]" style={{ ...fontHead, color: C.ink }}>Harvester Smart Khata</span>
+          </div>
+          <button onClick={handleLogout} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: C.roseSoft }}>
+            <LogOut size={15} color={C.rose} />
+          </button>
         </div>
 
         <div className="p-4 sm:p-6 md:p-10 max-w-6xl mx-auto">
-          {view === 'dashboard' && <Dashboard notify={notify} />}
-          {view === 'farmers' && <AddFarmer notify={notify} />}
-          {view === 'entry' && <NewKataiEntry notify={notify} />}
-          {view === 'search' && <KhataSearch notify={notify} />}
+          {safeView === 'dashboard' && <Dashboard notify={notify} token={token} onUnauthorized={handleUnauthorized} />}
+          {safeView === 'farmers' && <AddFarmer notify={notify} token={token} onUnauthorized={handleUnauthorized} />}
+          {safeView === 'entry' && <NewKataiEntry notify={notify} token={token} onUnauthorized={handleUnauthorized} />}
+          {safeView === 'search' && <KhataSearch notify={notify} token={token} onUnauthorized={handleUnauthorized} />}
+          {safeView === 'all_harvesters' && user.role === 'superadmin' && (
+            <AllHarvestersView notify={notify} token={token} onUnauthorized={handleUnauthorized} />
+          )}
         </div>
       </main>
 
-      <BottomNav view={view} setView={setView} />
+      <BottomNav view={safeView} setView={setView} role={user.role} />
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
