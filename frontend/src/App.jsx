@@ -1045,7 +1045,7 @@ function NewKataiEntry({ notify, token, onUnauthorized }) {
             <div>
               <FieldLabel>Season Year</FieldLabel>
               <Select value={form.season_year} onChange={(e) => setForm({ ...form, season_year: Number(e.target.value) })}>
-                {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
+                {[2026, 2027, 2028, 2029, 2030,].map((y) => <option key={y} value={y}>{y}</option>)}
               </Select>
             </div>
             <div>
